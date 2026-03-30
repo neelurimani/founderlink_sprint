@@ -1,0 +1,32 @@
+# Infrastructure only: MySQL, RabbitMQ, Zipkin. Run Discovery, Config, Gateway, and app services on the host (IntelliJ).
+# Published ports: 3306, 5672, 15672, 9411 — apps use localhost for JDBC, RabbitMQ, and Zipkin.
+# From project root: docker compose up -d
+# Then start 01 Discovery → 02 Config → Gateway → remaining services in order.
+services:
+  mysql:
+    image: mysql:8.4
+    container_name: founderlink-mysql-dev
+    ports:
+      - "3306:3306"
+    environment:
+      MYSQL_ROOT_PASSWORD: "12345678"
+    command: --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-p12345678"]
+      interval: 5s
+      timeout: 5s
+      retries: 18
+      start_period: 15s
+
+  rabbitmq:
+    image: rabbitmq:3-management
+    container_name: founderlink-rabbitmq-dev
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+
+  zipkin:
+    image: openzipkin/zipkin
+    container_name: founderlink-zipkin-dev
+    ports:
+      - "9411:9411"

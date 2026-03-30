@@ -1,0 +1,14 @@
+<component name="ProjectRunConfigurationManager">
+  <configuration default="false" name="03 API Gateway" type="SpringBootApplicationConfigurationType" factoryName="Spring Boot">
+    <module name="api-gateway" />
+    <option name="SPRING_BOOT_MAIN_CLASS" value="com.founderlink.apigateway.ApiGatewayApplication" />
+    <envs>
+      <env name="API_GATEWAY_PORT" value="8080" />
+      <env name="CONFIG_SERVER_URL" value="http://localhost:8888" />
+      <env name="EUREKA_SERVER_URL" value="http://localhost:8761/eureka/" />
+    </envs>
+    <method v="2">
+      <option name="Make" enabled="true" />
+    </method>
+  </configuration>
+</component>

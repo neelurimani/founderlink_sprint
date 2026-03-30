@@ -1,0 +1,6 @@
+# Postman: import postman/FounderLink.postman_collection.json + postman/FounderLink.postman_environment.json (see postman/README.md).
+
+spring:
+  jackson:
+    serialization:
+      indent-output: true

@@ -1,0 +1,14 @@
+# OS/editor junk
+.DS_Store
+**/.DS_Store
+.idea/
+**/.idea/
+*.iml
+
+# Build outputs
+target/
+**/target/
+
+# Nested git repos (e.g. the config directory you used)
+**/.git/
+

@@ -1,0 +1,2506 @@
+{
+  "info": {
+    "name": "FounderLink API (Gateway)",
+    "_postman_id": "c5e9e4b1-4d19-4cf8-9c20-7d4a8bb9d7de",
+    "description": "FounderLink API via API Gateway.\n\n**Local setup:** Run Discovery, Config, Gateway, and services on **localhost**. Use Docker for infra: MySQL (3306), RabbitMQ, Zipkin. See `PORTS.md`.\n\n**Order:** Discovery (8761) \u2192 Config (8888) \u2192 Gateway ({{gatewayUrl}}) \u2192 apps.\n\n**Gateway routing:** `strip-path-prefix` maps `/api/<service>/...` to downstream services.\n\n**Idempotency:** `POST` under `/api/**` requires header **Idempotency-Key** *except* **`/api/auth/**`** (register, login, refresh work without it). The collection pre-request script still sets `{{idempotencyKey}}` (GUID) for all requests; auth routes ignore it.\n\n**Public (no JWT):** `GET /api/startups`, `GET /api/startups/**` (list, by id, by industry) \u2014 gateway allows anonymous GET for the startup catalog.\n\n**Auth:** **Register** returns `message`, `userId`, `email` only (no JWT). **Login** returns `accessToken` and `refreshToken`.\n\n**Startups:** `status` is `PENDING` | `APPROVED` | `REJECTED`. Public listing returns **APPROVED** only. ADMIN approves via `PUT` body `{\"status\":\"APPROVED\"}` or `{\"status\":\"REJECTED\"}`. Duplicate name per founder \u2192 **409** `Startup already exists for this founder`.\n\n**Investments:** Requires **INVESTOR** (or ADMIN); startup must be **APPROVED**.\n\n**Team:** **FOUNDER** `POST /api/teams/invite` body `startupId`, `invitedUserId`, `role` (e.g. COFOUNDER). Invitee `POST /api/teams/join` with `startupId`. `GET /api/teams/startup/{startupId}` lists members. Publishes **`team.invite.sent`** (notifications + analytics). Duplicate invite \u2192 **409**.\n\n**Variables:** `{{gatewayUrl}}`; import `FounderLink.postman_environment.json`.\n\n**Bootstrap:** Register roles \u2192 Login (Founder) \u2192 Create Startup \u2192 Login (Admin) \u2192 Approve Startup \u2192 Register (Cofounder) \u2192 Login (Cofounder) \u2192 Invite Team Member \u2192 Join Team \u2192 Login (Investor) \u2192 Create Investment.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{accessToken}}",
+        "type": "string"
+      }
+    ]
+  },
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "// Idempotency-Key: new GUID for POST /api/** (auth routes /api/auth/* exempt at gateway).",
+          "pm.environment.set('idempotencyKey', pm.variables.replaceIn('{{$guid}}'));",
+          "",
+          "function founderlinkJwtUserId(token) {",
+          "    if (!token || typeof token !== 'string' || token.split('.').length < 2) return null;",
+          "    try {",
+          "        var b64 = token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');",
+          "        var pad = (4 - (b64.length % 4)) % 4;",
+          "        var padded = b64 + (pad ? '===='.slice(0, pad) : '');",
+          "        var payload = JSON.parse(atob(padded));",
+          "        if (payload.userId != null) return String(payload.userId);",
+          "        if (payload.sub != null) return String(payload.sub);",
+          "    } catch (e) {}",
+          "    return null;",
+          "}",
+          "(function () {",
+          "    var t = pm.environment.get('accessToken');",
+          "    var uid = founderlinkJwtUserId(t);",
+          "    if (uid) pm.environment.set('authUserId', uid);",
+          "})();",
+          "",
+          "// Defaults only if missing \u2014 non-seed emails; register first, then login with same vars.",
+          "if (!pm.environment.get('founderName')) pm.environment.set('founderName', 'Local Founder');",
+          "if (!pm.environment.get('founderEmail')) pm.environment.set('founderEmail', 'local.founder@example.com');",
+          "if (!pm.environment.get('founderPassword')) pm.environment.set('founderPassword', 'Password123!');",
+          "if (!pm.environment.get('investorName')) pm.environment.set('investorName', 'Local Investor');",
+          "if (!pm.environment.get('investorEmail')) pm.environment.set('investorEmail', 'local.investor@example.com');",
+          "if (!pm.environment.get('investorPassword')) pm.environment.set('investorPassword', 'Password123!');",
+          "if (!pm.environment.get('cofounderName')) pm.environment.set('cofounderName', 'Local Cofounder');",
+          "if (!pm.environment.get('cofounderEmail')) pm.environment.set('cofounderEmail', 'local.cofounder@example.com');",
+          "if (!pm.environment.get('cofounderPassword')) pm.environment.set('cofounderPassword', 'Password123!');",
+          "if (!pm.environment.get('adminName')) pm.environment.set('adminName', 'Local Admin');",
+          "if (!pm.environment.get('adminEmail')) pm.environment.set('adminEmail', 'local.admin@example.com');",
+          "if (!pm.environment.get('adminPassword')) pm.environment.set('adminPassword', 'Password123!');"
+        ]
+      }
+    }
+  ],
+  "item": [
+    {
+      "name": "API Gateway",
+      "item": [
+        {
+          "name": "Gateway Routes",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{gatewayUrl}}/gateway/routes",
+              "host": [
+                "{{gatewayUrl}}"
+              ],
+              "path": [
+                "gateway",
+                "routes"
+              ]
+            }
+          }
+        },
+        {
+          "name": "System Status",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{gatewayUrl}}/system/status",
+              "host": [
+                "{{gatewayUrl}}"
+              ],
+              "path": [
+                "system",
+                "status"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Gateway Actuator \u2014 Health",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "auth": {
+              "type": "noauth"
+            },
+            "url": {
+              "raw": "{{gatewayUrl}}/actuator/health",
+              "host": [
+                "{{gatewayUrl}}"
+              ],
+              "path": [
+                "actuator",
+                "health"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Gateway Actuator \u2014 Info",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "auth": {
+              "type": "noauth"
+            },
+            "url": {
+              "raw": "{{gatewayUrl}}/actuator/info",
+              "host": [
+                "{{gatewayUrl}}"
+              ],
+              "path": [
+                "actuator",
+                "info"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Auth Service",
+      "item": [
+        {
+          "name": "Register (FOUNDER)",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"{{founderName}}\",\n  \"email\": \"{{founderEmail}}\",\n  \"password\": \"{{founderPassword}}\",\n  \"role\": \"FOUNDER\"\n}"
+            },
+            "url": {
+              "raw": "{{gatewayUrl}}/api/auth/register",
+              "host": [
+                "{{gatewayUrl}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "register"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Register: 201 Created or 409 conflict', function () {",
+                  "  pm.expect([201, 409]).to.include(pm.response.code);",
+                  "});",
+                  "if (pm.response.code === 201) {",
+                  "  const json = pm.response.json();",
+                  "  pm.test('Register: no JWT in body', function () {",
+                  "    pm.expect(json.accessToken).to.be.undefined;",
+                  "    pm.expect(json.refreshToken).to.be.undefined;",
+                  "  });",
+                  "  if (json && json.userId) {",
+                  "    const uid = String(json.userId);",
+                  "    pm.environment.set('authUserId', uid);",
+                  "    pm.environment.set('founderAuthUserId', uid);",
+                  "  }",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Register (INVESTOR)",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"{{investorName}}\",\n  \"email\": \"{{investorEmail}}\",\n  \"password\": \"{{investorPassword}}\",\n  \"role\": \"INVESTOR\"\n}"
+            },
+            "url": {
+              "raw": "{{gatewayUrl}}/api/auth/register",
+              "host": [
+                "{{gatewayUrl}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "register"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Register: 201 Created or 409 conflict', function () {",
+                  "  pm.expect([201, 409]).to.include(pm.response.code);",
+                  "});",
+                  "if (pm.response.code === 201) {",
+                  "  const json = pm.response.json();",
+                  "  if (json && json.userId) {",
+                  "    const uid = String(json.userId);",
+                  "    pm.environment.set('authUserId', uid);",
+                  "    pm.environment.set('investorAuthUserId', uid);",
+                  "  }",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Register (COFOUNDER)",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"{{cofounderName}}\",\n  \"email\": \"{{cofounderEmail}}\",\n  \"password\": \"{{cofounderPassword}}\",\n  \"role\": \"COFOUNDER\"\n}"
+            },
+            "url": {
+              "raw": "{{gatewayUrl}}/api/auth/register",
+              "host": [
+                "{{gatewayUrl}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "register"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Register: 201 Created or 409 conflict', function () {",
+                  "  pm.expect([201, 409]).to.include(pm.response.code);",
+                  "});",
+                  "if (pm.response.code === 201) {",
+                  "  const json = pm.response.json();",
+                  "  if (json && json.userId) {",
+                  "    const uid = String(json.userId);",
+                  "    pm.environment.set('authUserId', uid);",
+                  "    pm.environment.set('cofounderAuthUserId', uid);",
+                  "  }",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Register (ADMIN)",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"{{adminName}}\",\n  \"email\": \"{{adminEmail}}\",\n  \"password\": \"{{adminPassword}}\",\n  \"role\": \"ADMIN\",\n  \"adminCode\": \"{{adminRegistrationCode}}\"\n}"
+            },
+            "url": {
+              "raw": "{{gatewayUrl}}/api/auth/register",
+              "host": [
+                "{{gatewayUrl}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "register"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Register: 201 Created or 409 conflict', function () {",
+                  "  pm.expect([201, 409]).to.include(pm.response.code);",
+                  "});",
+                  "if (pm.response.code === 201) {",
+                  "  const json = pm.response.json();",
+                  "  if (json && json.userId) {",
+                  "    const uid = String(json.userId);",
+                  "    pm.environment.set('authUserId', uid);",
+                  "    pm.environment.set('adminAuthUserId', uid);",
+                  "  }",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Login (loginEmail & loginPassword)",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{loginEmail}}\",\n  \"password\": \"{{loginPassword}}\"\n}"
+            },
+            "url": {
+              "raw": "{{gatewayUrl}}/api/auth/login",
+              "host": [
+                "{{gatewayUrl}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "login"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "function founderlinkJwtUserId(token) {",
+                  "    if (!token || typeof token !== 'string' || token.split('.').length < 2) return null;",
+                  "    try {",
+                  "        var b64 = token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');",
+                  "        var pad = (4 - (b64.length % 4)) % 4;",
+                  "        var padded = b64 + (pad ? '===='.slice(0, pad) : '');",
+                  "        var payload = JSON.parse(atob(padded));",
+                  "        if (payload.userId != null) return String(payload.userId);",
+                  "        if (payload.sub != null) return String(payload.sub);",
+                  "    } catch (e) {}",
+                  "    return null;",
+                  "}",
+                  "  const json = pm.response.json();",
+                  "  if (json && json.accessToken) pm.environment.set('accessToken', json.accessToken);",
+                  "  const __uid = founderlinkJwtUserId(json.accessToken);",
+                  "  if (__uid) pm.environment.set('authUserId', __uid);",
+                  "  if (json && json.refreshToken) pm.environment.set('refreshToken', json.refreshToken);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Login (Admin)",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{adminEmail}}\",\n  \"password\": \"{{adminPassword}}\"\n}"
+            },
+            "url": {
+              "raw": "{{gatewayUrl}}/api/auth/login",
+              "host": [
+                "{{gatewayUrl}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "login"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "function founderlinkJwtUserId(token) {",
+                  "    if (!token || typeof token !== 'string' || token.split('.').length < 2) return null;",
+                  "    try {",
+                  "        var b64 = token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');",
+                  "        var pad = (4 - (b64.length % 4)) % 4;",
+                  "        var padded = b64 + (pad ? '===='.slice(0, pad) : '');",
+                  "        var payload = JSON.parse(atob(padded));",
+                  "        if (payload.userId != null) return String(payload.userId);",
+                  "        if (payload.sub != null) return String(payload.sub);",
+                  "    } catch (e) {}",
+                  "    return null;",
+                  "}",
+                  "  const json = pm.response.json();",
+                  "  if (json && json.accessToken) {",
+                  "    pm.environment.set('adminAccessToken', json.accessToken);",
+                  "    pm.environment.set('accessToken', json.accessToken);",
+                  "  const __uid = founderlinkJwtUserId(json.accessToken);",
+                  "  if (__uid) { pm.environment.set('authUserId', __uid); pm.environment.set('adminAuthUserId', __uid); }",
+                  "  }",
+                  "  if (json && json.refreshToken) {",
+                  "    pm.environment.set('adminRefreshToken', json.refreshToken);",
+                  "    pm.environment.set('refreshToken', json.refreshToken);",
+                  "  }",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Login (Founder)",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{founderEmail}}\",\n  \"password\": \"{{founderPassword}}\"\n}"
+            },
+            "url": {
+              "raw": "{{gatewayUrl}}/api/auth/login",
+              "host": [
+                "{{gatewayUrl}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "login"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "function founderlinkJwtUserId(token) {",
+                  "    if (!token || typeof token !== 'string' || token.split('.').length < 2) return null;",
+                  "    try {",
+                  "        var b64 = token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');",
+                  "        var pad = (4 - (b64.length % 4)) % 4;",
+                  "        var padded = b64 + (pad ? '===='.slice(0, pad) : '');",
+                  "        var payload = JSON.parse(atob(padded));",
+                  "        if (payload.userId != null) return String(payload.userId);",
+                  "        if (payload.sub != null) return String(payload.sub);",
+                  "    } catch (e) {}",
+                  "    return null;",
+                  "}",
+                  "  const json = pm.response.json();",
+                  "  if (json && json.accessToken) {",
+                  "    pm.environment.set('founderAccessToken', json.accessToken);",
+                  "    pm.environment.set('accessToken', json.accessToken);",
+                  "  const __uid = founderlinkJwtUserId(json.accessToken);",
+                  "  if (__uid) { pm.environment.set('authUserId', __uid); pm.environment.set('founderAuthUserId', __uid); }",
+                  "  }",
+                  "  if (json && json.refreshToken) {",
+                  "    pm.environment.set('founderRefreshToken', json.refreshToken);",
+                  "    pm.environment.set('refreshToken', json.refreshToken);",
+                  "  }",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Login (Investor)",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{investorEmail}}\",\n  \"password\": \"{{investorPassword}}\"\n}"
+            },
+            "url": {
+              "raw": "{{gatewayUrl}}/api/auth/login",
+              "host": [
+                "{{gatewayUrl}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "login"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "function founderlinkJwtUserId(token) {",
+                  "    if (!token || typeof token !== 'string' || token.split('.').length < 2) return null;",
+                  "    try {",
+                  "        var b64 = token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');",
+                  "        var pad = (4 - (b64.length % 4)) % 4;",
+                  "        var padded = b64 + (pad ? '===='.slice(0, pad) : '');",
+                  "        var payload = JSON.parse(atob(padded));",
+                  "        if (payload.userId != null) return String(payload.userId);",
+                  "        if (payload.sub != null) return String(payload.sub);",
+                  "    } catch (e) {}",
+                  "    return null;",
+                  "}",
+                  "  const json = pm.response.json();",
+                  "  if (json && json.accessToken) {",
+                  "    pm.environment.set('investorAccessToken', json.accessToken);",
+                  "    pm.environment.set('accessToken', json.accessToken);",
+                  "  const __uid = founderlinkJwtUserId(json.accessToken);",
+                  "  if (__uid) { pm.environment.set('authUserId', __uid); pm.environment.set('investorAuthUserId', __uid); }",
+                  "  }",
+                  "  if (json && json.refreshToken) {",
+                  "    pm.environment.set('investorRefreshToken', json.refreshToken);",
+                  "    pm.environment.set('refreshToken', json.refreshToken);",
+                  "  }",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Login (Cofounder)",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{cofounderEmail}}\",\n  \"password\": \"{{cofounderPassword}}\"\n}"
+            },
+            "url": {
+              "raw": "{{gatewayUrl}}/api/auth/login",
+              "host": [
+                "{{gatewayUrl}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "login"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "function founderlinkJwtUserId(token) {",
+                  "    if (!token || typeof token !== 'string' || token.split('.').length < 2) return null;",
+                  "    try {",
+                  "        var b64 = token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');",
+                  "        var pad = (4 - (b64.length % 4)) % 4;",
+                  "        var padded = b64 + (pad ? '===='.slice(0, pad) : '');",
+                  "        var payload = JSON.parse(atob(padded));",
+                  "        if (payload.userId != null) return String(payload.userId);",
+                  "        if (payload.sub != null) return String(payload.sub);",
+                  "    } catch (e) {}",
+                  "    return null;",
+                  "}",
+                  "  const json = pm.response.json();",
+                  "  if (json && json.accessToken) {",
+                  "    pm.environment.set('cofounderAccessToken', json.accessToken);",
+                  "    pm.environment.set('accessToken', json.accessToken);",
+                  "  const __uid = founderlinkJwtUserId(json.accessToken);",
+                  "  if (__uid) { pm.environment.set('authUserId', __uid); pm.environment.set('cofounderAuthUserId', __uid); }",
+                  "  }",
+                  "  if (json && json.refreshToken) {",
+                  "    pm.environment.set('cofounderRefreshToken', json.refreshToken);",
+                  "    pm.environment.set('refreshToken', json.refreshToken);",
+                  "  }",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Refresh (uses refreshToken)",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{refreshToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{gatewayUrl}}/api/auth/refresh",
+              "host": [
+                "{{gatewayUrl}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "refresh"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "function founderlinkJwtUserId(token) {",
+                  "    if (!token || typeof token !== 'string' || token.split('.').length < 2) return null;",
+                  "    try {",
+                  "        var b64 = token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');",
+                  "        var pad = (4 - (b64.length % 4)) % 4;",
+                  "        var padded = b64 + (pad ? '===='.slice(0, pad) : '');",
+                  "        var payload = JSON.parse(atob(padded));",
+                  "        if (payload.userId != null) return String(payload.userId);",
+                  "        if (payload.sub != null) return String(payload.sub);",
+                  "    } catch (e) {}",
+                  "    return null;",
+                  "}",
+                  "  const json = pm.response.json();",
+                  "  if (json && json.accessToken) pm.environment.set('accessToken', json.accessToken);",
+                  "  const __uid = founderlinkJwtUserId(json.accessToken);",
+                  "  if (__uid) pm.environment.set('authUserId', __uid);",
+                  "  if (json && json.refreshToken) pm.environment.set('refreshToken', json.refreshToken);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Refresh (Admin \u2014 uses adminRefreshToken)",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{adminRefreshToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{gatewayUrl}}/api/auth/refresh",
+              "host": [
+                "{{gatewayUrl}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "refresh"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "function founderlinkJwtUserId(token) {",
+                  "    if (!token || typeof token !== 'string' || token.split('.').length < 2) return null;",
+                  "    try {",
+                  "        var b64 = token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');",
+                  "        var pad = (4 - (b64.length % 4)) % 4;",
+                  "        var padded = b64 + (pad ? '===='.slice(0, pad) : '');",
+                  "        var payload = JSON.parse(atob(padded));",
+                  "        if (payload.userId != null) return String(payload.userId);",
+                  "        if (payload.sub != null) return String(payload.sub);",
+                  "    } catch (e) {}",
+                  "    return null;",
+                  "}",
+                  "  const json = pm.response.json();",
+                  "  if (json && json.accessToken) pm.environment.set('adminAccessToken', json.accessToken);",
+                  "  const __uid = founderlinkJwtUserId(json.accessToken);",
+                  "  if (__uid) { pm.environment.set('authUserId', __uid); pm.environment.set('adminAuthUserId', __uid); }",
+                  "  if (json && json.refreshToken) pm.environment.set('adminRefreshToken', json.refreshToken);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Refresh (Founder \u2014 uses founderRefreshToken)",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{founderRefreshToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{gatewayUrl}}/api/auth/refresh",
+              "host": [
+                "{{gatewayUrl}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "refresh"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "function founderlinkJwtUserId(token) {",
+                  "    if (!token || typeof token !== 'string' || token.split('.').length < 2) return null;",
+                  "    try {",
+                  "        var b64 = token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');",
+                  "        var pad = (4 - (b64.length % 4)) % 4;",
+                  "        var padded = b64 + (pad ? '===='.slice(0, pad) : '');",
+                  "        var payload = JSON.parse(atob(padded));",
+                  "        if (payload.userId != null) return String(payload.userId);",
+                  "        if (payload.sub != null) return String(payload.sub);",
+                  "    } catch (e) {}",
+                  "    return null;",
+                  "}",
+                  "  const json = pm.response.json();",
+                  "  if (json && json.accessToken) {",
+                  "    pm.environment.set('founderAccessToken', json.accessToken);",
+                  "    pm.environment.set('accessToken', json.accessToken);",
+                  "  const __uid = founderlinkJwtUserId(json.accessToken);",
+                  "  if (__uid) { pm.environment.set('authUserId', __uid); pm.environment.set('founderAuthUserId', __uid); }",
+                  "  }",
+                  "  if (json && json.refreshToken) {",
+                  "    pm.environment.set('founderRefreshToken', json.refreshToken);",
+                  "    pm.environment.set('refreshToken', json.refreshToken);",
+                  "  }",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Refresh (Investor \u2014 uses investorRefreshToken)",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{investorRefreshToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{gatewayUrl}}/api/auth/refresh",
+              "host": [
+                "{{gatewayUrl}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "refresh"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "function founderlinkJwtUserId(token) {",
+                  "    if (!token || typeof token !== 'string' || token.split('.').length < 2) return null;",
+                  "    try {",
+                  "        var b64 = token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');",
+                  "        var pad = (4 - (b64.length % 4)) % 4;",
+                  "        var padded = b64 + (pad ? '===='.slice(0, pad) : '');",
+                  "        var payload = JSON.parse(atob(padded));",
+                  "        if (payload.userId != null) return String(payload.userId);",
+                  "        if (payload.sub != null) return String(payload.sub);",
+                  "    } catch (e) {}",
+                  "    return null;",
+                  "}",
+                  "  const json = pm.response.json();",
+                  "  if (json && json.accessToken) {",
+                  "    pm.environment.set('investorAccessToken', json.accessToken);",
+                  "    pm.environment.set('accessToken', json.accessToken);",
+                  "  const __uid = founderlinkJwtUserId(json.accessToken);",
+                  "  if (__uid) { pm.environment.set('authUserId', __uid); pm.environment.set('investorAuthUserId', __uid); }",
+                  "  }",
+                  "  if (json && json.refreshToken) {",
+                  "    pm.environment.set('investorRefreshToken', json.refreshToken);",
+                  "    pm.environment.set('refreshToken', json.refreshToken);",
+                  "  }",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Refresh (Cofounder \u2014 uses cofounderRefreshToken)",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{cofounderRefreshToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{gatewayUrl}}/api/auth/refresh",
+              "host": [
+                "{{gatewayUrl}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "refresh"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "function founderlinkJwtUserId(token) {",
+                  "    if (!token || typeof token !== 'string' || token.split('.').length < 2) return null;",
+                  "    try {",
+                  "        var b64 = token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');",
+                  "        var pad = (4 - (b64.length % 4)) % 4;",
+                  "        var padded = b64 + (pad ? '===='.slice(0, pad) : '');",
+                  "        var payload = JSON.parse(atob(padded));",
+                  "        if (payload.userId != null) return String(payload.userId);",
+                  "        if (payload.sub != null) return String(payload.sub);",
+                  "    } catch (e) {}",
+                  "    return null;",
+                  "}",
+                  "  const json = pm.response.json();",
+                  "  if (json && json.accessToken) {",
+                  "    pm.environment.set('cofounderAccessToken', json.accessToken);",
+                  "    pm.environment.set('accessToken', json.accessToken);",
+                  "  const __uid = founderlinkJwtUserId(json.accessToken);",
+                  "  if (__uid) { pm.environment.set('authUserId', __uid); pm.environment.set('cofounderAuthUserId', __uid); }",
+                  "  }",
+                  "  if (json && json.refreshToken) {",
+                  "    pm.environment.set('cofounderRefreshToken', json.refreshToken);",
+                  "    pm.environment.set('refreshToken', json.refreshToken);",
+                  "  }",
+                  "}"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "User Service",
+      "item": [
+        {
+          "name": "Create User Profile",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{idempotencyKey}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Ava Founder\",\n  \"email\": \"ava@founderlink.com\",\n  \"role\": \"FOUNDER\",\n  \"skills\": \"Product, Growth\",\n  \"experience\": \"Built 2 SaaS products\",\n  \"bio\": \"Founder building in fintech\",\n  \"portfolioLinks\": \"https://ava.dev\",\n  \"startupName\": \"Orbit Labs\",\n  \"industry\": \"SaaS\",\n  \"fundingGoal\": 500000\n}"
+            },
+            "url": {
+              "raw": "{{gatewayUrl}}/api/users",
+              "host": [
+                "{{gatewayUrl}}"
+              ],
+              "path": [
+                "api",
+                "users"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 201 || pm.response.code === 200) {",
+                  "  const json = pm.response.json();",
+                  "  if (json && json.id) {",
+                  "    pm.environment.set('authUserId', String(json.id));",
+                  "    pm.environment.set('founderAuthUserId', String(json.id));",
+                  "  }",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create Founder Profile",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{idempotencyKey}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Maya Founder\",\n  \"email\": \"maya@founderlink.com\",\n  \"skills\": \"Product\",\n  \"experience\": \"B2B SaaS\",\n  \"bio\": \"Building a platform\",\n  \"portfolioLinks\": \"https://github.com/maya\",\n  \"startupName\": \"Orbit Labs\",\n  \"industry\": \"SaaS\",\n  \"fundingGoal\": 500000\n}"
+            },
+            "url": {
+              "raw": "{{gatewayUrl}}/api/users/founders",
+              "host": [
+                "{{gatewayUrl}}"
+              ],
+              "path": [
+                "api",
+                "users",
+                "founders"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Create CoFounder Profile",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{idempotencyKey}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Noah CoFounder\",\n  \"email\": \"noah@founderlink.com\",\n  \"skills\": \"Engineering\",\n  \"experience\": \"Backend\",\n  \"bio\": \"Co-founder\",\n  \"portfolioLinks\": \"https://noah.dev\",\n  \"expertise\": \"Java\",\n  \"coFounderExperience\": \"2 years\"\n}"
+            },
+            "url": {
+              "raw": "{{gatewayUrl}}/api/users/cofounders",
+              "host": [
+                "{{gatewayUrl}}"
+              ],
+              "path": [
+                "api",
+                "users",
+                "cofounders"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Create Investor Profile",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{idempotencyKey}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Ian Investor\",\n  \"email\": \"ian@invest.com\",\n  \"skills\": \"Finance\",\n  \"experience\": \"Angel\",\n  \"bio\": \"Looking for SaaS\",\n  \"portfolioLinks\": \"https://ian.vc\",\n  \"investmentBudget\": 250000,\n  \"preferredIndustries\": \"SaaS,FinTech\"\n}"
+            },
+            "url": {
+              "raw": "{{gatewayUrl}}/api/users/investors",
+              "host": [
+                "{{gatewayUrl}}"
+              ],
+              "path": [
+                "api",
+                "users",
+                "investors"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get User By Id",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{gatewayUrl}}/api/users/{{authUserId}}",
+              "host": [
+                "{{gatewayUrl}}"
+              ],
+              "path": [
+                "api",
+                "users",
+                "{{authUserId}}"
+              ]
+            }
+          }
+        },
+        {
+          "name": "List Users (paginated)",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{gatewayUrl}}/api/users?page=0&size=10",
+              "host": [
+                "{{gatewayUrl}}"
+              ],
+              "path": [
+                "api",
+                "users"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "0"
+                },
+                {
+                  "key": "size",
+                  "value": "10"
+                }
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{adminAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Update User Profile",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Ava Founder\",\n  \"email\": \"ava.updated@founderlink.com\",\n  \"role\": \"FOUNDER\",\n  \"skills\": \"Product, Growth, Fundraising\",\n  \"experience\": \"Built 3 SaaS products\",\n  \"bio\": \"Founder building in climate tech\",\n  \"portfolioLinks\": \"https://ava.dev/profile\"\n}"
+            },
+            "url": {
+              "raw": "{{gatewayUrl}}/api/users/{{authUserId}}",
+              "host": [
+                "{{gatewayUrl}}"
+              ],
+              "path": [
+                "api",
+                "users",
+                "{{authUserId}}"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Update Founder Profile",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{founderAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Maya Founder (Updated)\",\n  \"email\": \"maya@founderlink.com\",\n  \"skills\": \"Product, Leadership\",\n  \"experience\": \"B2B SaaS\",\n  \"bio\": \"Updated bio\",\n  \"portfolioLinks\": \"https://github.com/maya\",\n  \"startupName\": \"Orbit Labs\",\n  \"industry\": \"SaaS\",\n  \"fundingGoal\": 750000\n}"
+            },
+            "url": {
+              "raw": "{{gatewayUrl}}/api/users/founders/{{founderAuthUserId}}",
+              "host": [
+                "{{gatewayUrl}}"
+              ],
+              "path": [
+                "api",
+                "users",
+                "founders",
+                "{{founderAuthUserId}}"
+              ]
+            }
+          },
+          "description": "PUT /users/founders/{id}. Use founder token and `founderAuthUserId` (from JWT after Register/Login Founder)."
+        },
+        {
+          "name": "Update CoFounder Profile",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{cofounderAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Noah CoFounder (Updated)\",\n  \"email\": \"noah@founderlink.com\",\n  \"skills\": \"Engineering, Architecture\",\n  \"experience\": \"Backend\",\n  \"bio\": \"Updated\",\n  \"portfolioLinks\": \"https://noah.dev\",\n  \"expertise\": \"Java\",\n  \"coFounderExperience\": \"3 years\"\n}"
+            },
+            "url": {
+              "raw": "{{gatewayUrl}}/api/users/cofounders/{{cofounderAuthUserId}}",
+              "host": [
+                "{{gatewayUrl}}"
+              ],
+              "path": [
+                "api",
+                "users",
+                "cofounders",
+                "{{cofounderAuthUserId}}"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Update Investor Profile",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{investorAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Ian Investor (Updated)\",\n  \"email\": \"ian@invest.com\",\n  \"skills\": \"Finance\",\n  \"experience\": \"Angel\",\n  \"bio\": \"Updated\",\n  \"portfolioLinks\": \"https://ian.vc\",\n  \"investmentBudget\": 300000,\n  \"preferredIndustries\": \"SaaS,FinTech\"\n}"
+            },
+            "url": {
+              "raw": "{{gatewayUrl}}/api/users/investors/{{investorAuthUserId}}",
+              "host": [
+                "{{gatewayUrl}}"
+              ],
+              "path": [
+                "api",
+                "users",
+                "investors",
+                "{{investorAuthUserId}}"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Startup Service",
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "function founderlinkJwtUserId(token) {",
+              "    if (!token || typeof token !== 'string' || token.split('.').length < 2) return null;",
+              "    try {",
+              "        var b64 = token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');",
+              "        var pad = (4 - (b64.length % 4)) % 4;",
+              "        var padded = b64 + (pad ? '===='.slice(0, pad) : '');",
+              "        var payload = JSON.parse(atob(padded));",
+              "        if (payload.userId != null) return String(payload.userId);",
+              "        if (payload.sub != null) return String(payload.sub);",
+              "    } catch (e) {}",
+              "    return null;",
+              "}",
+              "var ft = pm.environment.get('founderAccessToken');",
+              "if (ft) {",
+              "  pm.environment.set('accessToken', ft);",
+              "  var uid = founderlinkJwtUserId(ft);",
+              "  if (uid) pm.environment.set('authUserId', uid);",
+              "}"
+            ]
+          }
+        }
+      ],
+      "item": [
+        {
+          "name": "Create Startup (FOUNDER)",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{founderAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{idempotencyKey}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"FounderLink Labs\",\n  \"description\": \"Building the future\",\n  \"industry\": \"FinTech\",\n  \"problemStatement\": \"Access\",\n  \"solution\": \"Platform\",\n  \"fundingGoal\": 100000,\n  \"stage\": \"MVP\"\n}"
+            },
+            "url": {
+              "raw": "{{gatewayUrl}}/api/startups",
+              "host": [
+                "{{gatewayUrl}}"
+              ],
+              "path": [
+                "api",
+                "startups"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 201 || pm.response.code === 200) {",
+                  "  const json = pm.response.json();",
+                  "  if (json && json.id) pm.environment.set('startupId', String(json.id));",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get Startup By Id",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{founderAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "description": "With **founder** JWT: view your startup in any `status`. For **public** access to an **APPROVED** listing, duplicate this request and set **Auth → No Auth** (gateway allows anonymous GET).",
+            "url": {
+              "raw": "{{gatewayUrl}}/api/startups/{{startupId}}",
+              "host": [
+                "{{gatewayUrl}}"
+              ],
+              "path": [
+                "api",
+                "startups",
+                "{{startupId}}"
+              ]
+            }
+          }
+        },
+        {
+          "name": "List Startups (paginated)",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{gatewayUrl}}/api/startups?page=0&size=5",
+              "host": [
+                "{{gatewayUrl}}"
+              ],
+              "path": [
+                "api",
+                "startups"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "0"
+                },
+                {
+                  "key": "size",
+                  "value": "5"
+                }
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            },
+            "description": "Public catalog: returns **APPROVED** startups only (non-ADMIN). No `Authorization` header required (collection default bearer is overridden)."
+          }
+        },
+        {
+          "name": "List Startups by Industry (public)",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{gatewayUrl}}/api/startups/industry/{{startupIndustry}}?page=0&size=5",
+              "host": [
+                "{{gatewayUrl}}"
+              ],
+              "path": [
+                "api",
+                "startups",
+                "industry",
+                "{{startupIndustry}}"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "0"
+                },
+                {
+                  "key": "size",
+                  "value": "5"
+                }
+              ]
+            },
+            "description": "Returns **APPROVED** startups filtered by `industry` (case-insensitive). Uses `{{startupIndustry}}` from environment."
+          }
+        },
+        {
+          "name": "Update Startup (FOUNDER or ADMIN)",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{founderAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"FounderLink Labs (Updated)\",\n  \"description\": \"Updated description\",\n  \"industry\": \"FinTech\",\n  \"problemStatement\": \"Access\",\n  \"solution\": \"Platform\",\n  \"fundingGoal\": 120000,\n  \"stage\": \"EARLY_TRACTION\"\n}"
+            },
+            "url": {
+              "raw": "{{gatewayUrl}}/api/startups/{{startupId}}",
+              "host": [
+                "{{gatewayUrl}}"
+              ],
+              "path": [
+                "api",
+                "startups",
+                "{{startupId}}"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Approve Startup (ADMIN)",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{adminAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"APPROVED\"\n}"
+            },
+            "url": {
+              "raw": "{{gatewayUrl}}/api/startups/{{startupId}}",
+              "host": [
+                "{{gatewayUrl}}"
+              ],
+              "path": [
+                "api",
+                "startups",
+                "{{startupId}}"
+              ]
+            },
+            "description": "ADMIN only. Send `{\"status\":\"APPROVED\"}` or `{\"status\":\"REJECTED\"}`. Do not send founder-style full update here \u2014 admin path requires `status`. Requires **Login (Admin)** and `startupId` from **Create Startup**."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Investment Service",
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "function founderlinkJwtUserId(token) {",
+              "    if (!token || typeof token !== 'string' || token.split('.').length < 2) return null;",
+              "    try {",
+              "        var b64 = token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');",
+              "        var pad = (4 - (b64.length % 4)) % 4;",
+              "        var padded = b64 + (pad ? '===='.slice(0, pad) : '');",
+              "        var payload = JSON.parse(atob(padded));",
+              "        if (payload.userId != null) return String(payload.userId);",
+              "        if (payload.sub != null) return String(payload.sub);",
+              "    } catch (e) {}",
+              "    return null;",
+              "}",
+              "var it = pm.environment.get('investorAccessToken');",
+              "if (it) {",
+              "  pm.environment.set('accessToken', it);",
+              "  var iuid = founderlinkJwtUserId(it);",
+              "  if (iuid) {",
+              "    pm.environment.set('authUserId', iuid);",
+              "    pm.environment.set('investorAuthUserId', iuid);",
+              "  }",
+              "}"
+            ]
+          }
+        }
+      ],
+      "item": [
+        {
+          "name": "Create Investment (INVESTOR)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{idempotencyKey}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"investorId\": {{investorAuthUserId}},\n  \"startupId\": {{startupId}},\n  \"amount\": 25000\n}"
+            },
+            "url": {
+              "raw": "{{gatewayUrl}}/api/investments",
+              "host": [
+                "{{gatewayUrl}}"
+              ],
+              "path": [
+                "api",
+                "investments"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{investorAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 200 || pm.response.code === 201) {",
+                  "  const json = pm.response.json();",
+                  "  if (json && json.id) pm.environment.set('investmentId', String(json.id));",
+                  "}",
+                  "if (pm.response.code === 400) {",
+                  "  // If investorAuthUserId/startupId are empty, run Register+Login (Investor) and create a startup as founder.",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Approve Investment (ADMIN)",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Idempotency-Key",
+                "value": "{{idempotencyKey}}"
+              }
+            ],
+            "url": {
+              "raw": "{{gatewayUrl}}/api/investments/{{investmentId}}/approve",
+              "host": [
+                "{{gatewayUrl}}"
+              ],
+              "path": [
+                "api",
+                "investments",
+                "{{investmentId}}",
+                "approve"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{adminAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get Investments By Investor Id",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{gatewayUrl}}/api/investments/investor/{{investorAuthUserId}}",
+              "host": [
+                "{{gatewayUrl}}"
+              ],
+              "path": [
+                "api",
+                "investments",
+                "investor",
+                "{{investorAuthUserId}}"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{investorAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get Investments By Startup Id",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{investorAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "url": {
+              "raw": "{{gatewayUrl}}/api/investments/startup/{{startupId}}",
+              "host": [
+                "{{gatewayUrl}}"
+              ],
+              "path": [
+                "api",
+                "investments",
+                "startup",
+                "{{startupId}}"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Team Service",
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "function founderlinkJwtUserId(token) {",
+              "    if (!token || typeof token !== 'string' || token.split('.').length < 2) return null;",
+              "    try {",
+              "        var b64 = token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');",
+              "        var pad = (4 - (b64.length % 4)) % 4;",
+              "        var padded = b64 + (pad ? '===='.slice(0, pad) : '');",
+              "        var payload = JSON.parse(atob(padded));",
+              "        if (payload.userId != null) return String(payload.userId);",
+              "        if (payload.sub != null) return String(payload.sub);",
+              "    } catch (e) {}",
+              "    return null;",
+              "}",
+              "var ft = pm.environment.get('founderAccessToken');",
+              "if (ft) {",
+              "  pm.environment.set('accessToken', ft);",
+              "  var uid = founderlinkJwtUserId(ft);",
+              "  if (uid) pm.environment.set('authUserId', uid);",
+              "}"
+            ]
+          }
+        }
+      ],
+      "item": [
+        {
+          "name": "Invite Team Member (FOUNDER)",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{founderAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{idempotencyKey}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"startupId\": {{startupId}},\n  \"invitedUserId\": {{cofounderAuthUserId}},\n  \"role\": \"{{teamInviteRole}}\"\n}"
+            },
+            "url": {
+              "raw": "{{gatewayUrl}}/api/teams/invite",
+              "host": [
+                "{{gatewayUrl}}"
+              ],
+              "path": [
+                "api",
+                "teams",
+                "invite"
+              ]
+            },
+            "description": "**FOUNDER** JWT (`founderAccessToken`). Requires `startupId` (Create Startup) and cofounder user id from **Register (Cofounder)** + **Login (Cofounder)** (`cofounderAuthUserId`). Sets env `teamMemberId` on **201**. Publishes `team.invite.sent`."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Invite team: 201 Created (or 409 if duplicate)', function () {",
+                  "    pm.expect([201, 409]).to.include(pm.response.code);",
+                  "});",
+                  "if (pm.response.code === 201) {",
+                  "    const j = pm.response.json();",
+                  "    pm.test('Invite: response has startupId and PENDING', function () {",
+                  "        pm.expect(j).to.have.property('startupId');",
+                  "        pm.expect(j.status).to.eql('PENDING');",
+                  "    });",
+                  "    if (j && j.id != null) pm.environment.set('teamMemberId', String(j.id));",
+                  "}",
+                  "if (pm.response.code === 409) {",
+                  "    pm.test('Invite duplicate: conflict', function () { pm.expect(pm.response.code).to.equal(409); });",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Join Team (invited user)",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{cofounderAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{idempotencyKey}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"startupId\": {{startupId}}\n}"
+            },
+            "url": {
+              "raw": "{{gatewayUrl}}/api/teams/join",
+              "host": [
+                "{{gatewayUrl}}"
+              ],
+              "path": [
+                "api",
+                "teams",
+                "join"
+              ]
+            },
+            "description": "**Invitee** JWT (`cofounderAccessToken`). Call after **Invite Team Member**. Transitions membership to **ACTIVE**."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Join team: 200 OK', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "const j = pm.response.json();",
+                  "pm.test('Join: status ACTIVE', function () {",
+                  "    pm.expect(j.status).to.eql('ACTIVE');",
+                  "});",
+                  "pm.test('Join: userId matches cofounder', function () {",
+                  "    pm.expect(String(j.userId)).to.eql(String(pm.environment.get('cofounderAuthUserId')));",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "List Team Members by Startup",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{founderAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{gatewayUrl}}/api/teams/startup/{{startupId}}",
+              "host": [
+                "{{gatewayUrl}}"
+              ],
+              "path": [
+                "api",
+                "teams",
+                "startup",
+                "{{startupId}}"
+              ]
+            },
+            "description": "Any authenticated user with JWT. Expects at least one row after invite (PENDING or ACTIVE after join)."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('List team: 200 OK', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "const arr = pm.response.json();",
+                  "pm.test('List team: array response', function () {",
+                  "    pm.expect(Array.isArray(arr)).to.be.true;",
+                  "});",
+                  "pm.test('List team: at least one member', function () {",
+                  "    pm.expect(arr.length).to.be.at.least(1);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Invite Same Member Again (expect 409)",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{founderAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{idempotencyKey}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"startupId\": {{startupId}},\n  \"invitedUserId\": {{cofounderAuthUserId}},\n  \"role\": \"{{teamInviteRole}}\"\n}"
+            },
+            "url": {
+              "raw": "{{gatewayUrl}}/api/teams/invite",
+              "host": [
+                "{{gatewayUrl}}"
+              ],
+              "path": [
+                "api",
+                "teams",
+                "invite"
+              ]
+            },
+            "description": "Run after a successful invite. Expects **409 Conflict** (duplicate startup + user)."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Duplicate invite: 409 Conflict', function () {",
+                  "    pm.response.to.have.status(409);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Messaging Service (REST)",
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "function founderlinkJwtUserId(token) {",
+              "    if (!token || typeof token !== 'string' || token.split('.').length < 2) return null;",
+              "    try {",
+              "        var b64 = token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');",
+              "        var pad = (4 - (b64.length % 4)) % 4;",
+              "        var padded = b64 + (pad ? '===='.slice(0, pad) : '');",
+              "        var payload = JSON.parse(atob(padded));",
+              "        if (payload.userId != null) return String(payload.userId);",
+              "        if (payload.sub != null) return String(payload.sub);",
+              "    } catch (e) {}",
+              "    return null;",
+              "}",
+              "var ft = pm.environment.get('founderAccessToken');",
+              "if (ft) {",
+              "  pm.environment.set('accessToken', ft);",
+              "  var uid = founderlinkJwtUserId(ft);",
+              "  if (uid) pm.environment.set('authUserId', uid);",
+              "}"
+            ]
+          }
+        }
+      ],
+      "item": [
+        {
+          "name": "Send Message",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.environment.set('conversationId', 'e2e-' + pm.variables.replaceIn('{{$guid}}'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{idempotencyKey}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"conversationId\": \"{{conversationId}}\",\n  \"senderId\": {{authUserId}},\n  \"receiverId\": {{cofounderAuthUserId}},\n  \"content\": \"Hello!\"\n}"
+            },
+            "url": {
+              "raw": "{{gatewayUrl}}/api/messages",
+              "host": [
+                "{{gatewayUrl}}"
+              ],
+              "path": [
+                "api",
+                "messages"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get Conversation",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{founderAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "url": {
+              "raw": "{{gatewayUrl}}/api/messages/conversation/{{conversationId}}",
+              "host": [
+                "{{gatewayUrl}}"
+              ],
+              "path": [
+                "api",
+                "messages",
+                "conversation",
+                "{{conversationId}}"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Notifications Service",
+      "item": [
+        {
+          "name": "List All Notifications (ADMIN)",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{gatewayUrl}}/api/notifications",
+              "host": [
+                "{{gatewayUrl}}"
+              ],
+              "path": [
+                "api",
+                "notifications"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{adminAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "List Notifications By User (self or ADMIN)",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{gatewayUrl}}/api/notifications/user/{{authUserId}}",
+              "host": [
+                "{{gatewayUrl}}"
+              ],
+              "path": [
+                "api",
+                "notifications",
+                "user",
+                "{{authUserId}}"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Analytics Service",
+      "item": [
+        {
+          "name": "Funding Trends",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{gatewayUrl}}/api/analytics/funding-trends",
+              "host": [
+                "{{gatewayUrl}}"
+              ],
+              "path": [
+                "api",
+                "analytics",
+                "funding-trends"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Reports",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{gatewayUrl}}/api/analytics/reports",
+              "host": [
+                "{{gatewayUrl}}"
+              ],
+              "path": [
+                "api",
+                "analytics",
+                "reports"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Startup Service (cleanup)",
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "function founderlinkJwtUserId(token) {",
+              "    if (!token || typeof token !== 'string' || token.split('.').length < 2) return null;",
+              "    try {",
+              "        var b64 = token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');",
+              "        var pad = (4 - (b64.length % 4)) % 4;",
+              "        var padded = b64 + (pad ? '===='.slice(0, pad) : '');",
+              "        var payload = JSON.parse(atob(padded));",
+              "        if (payload.userId != null) return String(payload.userId);",
+              "        if (payload.sub != null) return String(payload.sub);",
+              "    } catch (e) {}",
+              "    return null;",
+              "}",
+              "var ft = pm.environment.get('founderAccessToken');",
+              "if (ft) {",
+              "  pm.environment.set('accessToken', ft);",
+              "  var uid = founderlinkJwtUserId(ft);",
+              "  if (uid) pm.environment.set('authUserId', uid);",
+              "}"
+            ]
+          }
+        }
+      ],
+      "item": [
+        {
+          "name": "Delete Startup (FOUNDER)",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Idempotency-Key",
+                "value": "{{idempotencyKey}}"
+              }
+            ],
+            "url": {
+              "raw": "{{gatewayUrl}}/api/startups/{{startupId}}",
+              "host": [
+                "{{gatewayUrl}}"
+              ],
+              "path": [
+                "api",
+                "startups",
+                "{{startupId}}"
+              ]
+            },
+            "description": "Runs **after** Investment, Messaging, Notifications, and Analytics so `startupId` still exists for those flows and async `investment.created` notifications can be processed before teardown."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Actuator \u2014 direct ports (no gateway)",
+      "description": "Health checks on each service. Use when running apps on localhost with default ports from PORTS.md.",
+      "item": [
+        {
+          "name": "Eureka \u2014 GET /actuator/health",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "auth": {
+              "type": "noauth"
+            },
+            "url": {
+              "raw": "{{discoveryUrl}}/actuator/health",
+              "host": [
+                "{{discoveryUrl}}"
+              ],
+              "path": [
+                "actuator",
+                "health"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Config Server \u2014 GET /actuator/health",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "auth": {
+              "type": "noauth"
+            },
+            "url": {
+              "raw": "{{configUrl}}/actuator/health",
+              "host": [
+                "{{configUrl}}"
+              ],
+              "path": [
+                "actuator",
+                "health"
+              ]
+            }
+          }
+        },
+        {
+          "name": "User Service \u2014 GET /actuator/health",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "auth": {
+              "type": "noauth"
+            },
+            "url": {
+              "raw": "{{userServiceUrl}}/actuator/health",
+              "host": [
+                "{{userServiceUrl}}"
+              ],
+              "path": [
+                "actuator",
+                "health"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Startup Service \u2014 GET /actuator/health",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "auth": {
+              "type": "noauth"
+            },
+            "url": {
+              "raw": "{{startupServiceUrl}}/actuator/health",
+              "host": [
+                "{{startupServiceUrl}}"
+              ],
+              "path": [
+                "actuator",
+                "health"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Auth Service \u2014 GET /actuator/health",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "auth": {
+              "type": "noauth"
+            },
+            "url": {
+              "raw": "{{authServiceUrl}}/actuator/health",
+              "host": [
+                "{{authServiceUrl}}"
+              ],
+              "path": [
+                "actuator",
+                "health"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Investment Service \u2014 GET /actuator/health",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "auth": {
+              "type": "noauth"
+            },
+            "url": {
+              "raw": "{{investmentServiceUrl}}/actuator/health",
+              "host": [
+                "{{investmentServiceUrl}}"
+              ],
+              "path": [
+                "actuator",
+                "health"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Team Service \u2014 GET /actuator/health",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "auth": {
+              "type": "noauth"
+            },
+            "url": {
+              "raw": "{{teamServiceUrl}}/actuator/health",
+              "host": [
+                "{{teamServiceUrl}}"
+              ],
+              "path": [
+                "actuator",
+                "health"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Messaging Service \u2014 GET /actuator/health",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "auth": {
+              "type": "noauth"
+            },
+            "url": {
+              "raw": "{{messagingServiceUrl}}/actuator/health",
+              "host": [
+                "{{messagingServiceUrl}}"
+              ],
+              "path": [
+                "actuator",
+                "health"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Notification Service \u2014 GET /actuator/health",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "auth": {
+              "type": "noauth"
+            },
+            "url": {
+              "raw": "{{notificationServiceUrl}}/actuator/health",
+              "host": [
+                "{{notificationServiceUrl}}"
+              ],
+              "path": [
+                "actuator",
+                "health"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Analytics Service \u2014 GET /actuator/health",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "auth": {
+              "type": "noauth"
+            },
+            "url": {
+              "raw": "{{analyticsServiceUrl}}/actuator/health",
+              "host": [
+                "{{analyticsServiceUrl}}"
+              ],
+              "path": [
+                "actuator",
+                "health"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "WebSocket (Messaging) Notes",
+      "item": [
+        {
+          "name": "Messaging Service \u2014 Health (direct)",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "GET",
+            "url": {
+              "raw": "{{messagingServiceUrl}}/actuator/health",
+              "host": [
+                "{{messagingServiceUrl}}"
+              ],
+              "path": [
+                "actuator",
+                "health"
+              ]
+            },
+            "description": "This item uses a harmless GET on the gateway so Newman/CI can run the whole collection.\n\nMessaging WebSocket is hosted directly on messaging-service (default :8085), not via gateway.\n\n- SockJS endpoint: http://localhost:8085/ws-chat\n- STOMP CONNECT headers:\n  - Authorization: Bearer <accessToken>  (or native header 'token')\n- Send destination: /app/chat.send\n  Body must include senderId matching authenticated user\n- Subscribe destination: /topic/conversations/{conversationId}\n\nUse a STOMP client (Postman WebSocket, Hoppscotch, or a small JS client)."
+          },
+          "description": "Placeholder GET so Newman/CI can run the folder. WebSocket is not proxied by the gateway.\n\n- SockJS: {{messagingServiceUrl}}/ws-chat\n- STOMP send: /app/chat.send (JWT in CONNECT headers)\n- Subscribe: /topic/conversations/{conversationId}"
+        }
+      ]
+    }
+  ]
+}

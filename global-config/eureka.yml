@@ -1,0 +1,15 @@
+server:
+  port: ${EUREKA_SERVER_PORT:${DISCOVERY_SERVER_PORT:8761}}
+
+eureka:
+  client:
+    register-with-eureka: false
+    fetch-registry: false
+    service-url:
+      defaultZone: http://localhost:${EUREKA_SERVER_PORT:${DISCOVERY_SERVER_PORT:8761}}/eureka/
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info

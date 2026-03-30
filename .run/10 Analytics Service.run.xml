@@ -1,0 +1,19 @@
+<component name="ProjectRunConfigurationManager">
+  <configuration default="false" name="10 Analytics Service" type="SpringBootApplicationConfigurationType" factoryName="Spring Boot">
+    <module name="analytics-service" />
+    <option name="SPRING_BOOT_MAIN_CLASS" value="com.founderlink.analyticsservice.AnalyticsServiceApplication" />
+    <envs>
+      <env name="ANALYTICS_SERVICE_PORT" value="8087" />
+      <env name="SPRING_PROFILES_ACTIVE" value="dev" />
+      <env name="CONFIG_SERVER_URL" value="http://localhost:8888" />
+      <env name="EUREKA_SERVER_URL" value="http://localhost:8761/eureka/" />
+      <env name="MYSQL_HOST" value="localhost" />
+      <env name="MYSQL_PORT" value="3306" />
+      <env name="MYSQL_USERNAME" value="root" />
+      <env name="MYSQL_PASSWORD" value="12345678" />
+    </envs>
+    <method v="2">
+      <option name="Make" enabled="true" />
+    </method>
+  </configuration>
+</component>

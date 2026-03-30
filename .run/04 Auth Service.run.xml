@@ -1,0 +1,19 @@
+<component name="ProjectRunConfigurationManager">
+  <configuration default="false" name="04 Auth Service" type="SpringBootApplicationConfigurationType" factoryName="Spring Boot">
+    <module name="auth-service" />
+    <option name="SPRING_BOOT_MAIN_CLASS" value="com.founderlink.authservice.AuthServiceApplication" />
+    <envs>
+      <env name="AUTH_SERVICE_PORT" value="8083" />
+      <env name="SPRING_PROFILES_ACTIVE" value="dev" />
+      <env name="CONFIG_SERVER_URL" value="http://localhost:8888" />
+      <env name="EUREKA_SERVER_URL" value="http://localhost:8761/eureka/" />
+      <env name="MYSQL_HOST" value="localhost" />
+      <env name="MYSQL_PORT" value="3306" />
+      <env name="MYSQL_USERNAME" value="root" />
+      <env name="MYSQL_PASSWORD" value="12345678" />
+    </envs>
+    <method v="2">
+      <option name="Make" enabled="true" />
+    </method>
+  </configuration>
+</component>

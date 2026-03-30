@@ -1,0 +1,12 @@
+<component name="ProjectRunConfigurationManager">
+  <configuration default="false" name="02 Config Global" type="SpringBootApplicationConfigurationType" factoryName="Spring Boot">
+    <module name="config-global" />
+    <option name="SPRING_BOOT_MAIN_CLASS" value="com.founderlink.configglobal.ConfigGlobalApplication" />
+    <envs>
+      <env name="EUREKA_SERVER_URL" value="http://localhost:8761/eureka/" />
+    </envs>
+    <method v="2">
+      <option name="Make" enabled="true" />
+    </method>
+  </configuration>
+</component>

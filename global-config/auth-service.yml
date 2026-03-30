@@ -1,0 +1,47 @@
+server:
+  port: ${AUTH_SERVICE_PORT:8083}
+
+spring:
+  datasource:
+    url: ${DB_URL:jdbc:mysql://${MYSQL_HOST:localhost}:${MYSQL_PORT:3306}/auth_service?createDatabaseIfNotExist=true}
+    username: ${DB_USERNAME:${MYSQL_USERNAME:root}}
+    password: ${DB_PASSWORD:${MYSQL_PASSWORD:12345678}}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+  jpa:
+    hibernate:
+      ddl-auto: ${JPA_DDL_AUTO:update}
+    show-sql: ${JPA_SHOW_SQL:true}
+    properties:
+      hibernate:
+        format_sql: true
+    open-in-view: false
+    defer-datasource-initialization: true
+  sql:
+    init:
+      mode: always
+      continue-on-error: true
+
+springdoc:
+  api-docs:
+    path: /api-docs
+  swagger-ui:
+    path: /swagger-ui
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+
+founderlink:
+  jwt:
+    access-token-expiry-minutes: ${JWT_ACCESS_TOKEN_EXPIRY_MINUTES:60}
+    refresh-token-expiry-days: ${JWT_REFRESH_TOKEN_EXPIRY_DAYS:7}
+  admin-registration:
+    enabled: true
+    code: founderlink-admin-2026
+  default-admin:
+    enabled: ${DEFAULT_ADMIN_ENABLED:true}
+    name: ${DEFAULT_ADMIN_NAME:Default Admin}
+    email: ${DEFAULT_ADMIN_EMAIL:admin@founderlink.local}
+    password: ${DEFAULT_ADMIN_PASSWORD:Admin@123}

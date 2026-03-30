@@ -1,0 +1,8 @@
+jwt:
+  secret: ${JWT_SECRET:founderlink-dev-secret-key-change-me-123456}
+  access-token-expiry-minutes: 60
+  refresh-token-expiry-days: 7
+
+security:
+  password:
+    min-length: 8

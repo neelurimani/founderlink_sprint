@@ -1,0 +1,70 @@
+server:
+  port: ${API_GATEWAY_PORT:8080}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+
+springdoc:
+  swagger-ui:
+    enabled: false
+  api-docs:
+    enabled: false
+
+gateway:
+  security:
+    api-key-header: X-API-Key
+    auth-header: Authorization
+    jwt-enabled: true
+    api-key-enabled: false
+    jwt-secret: ${JWT_SECRET:founderlink-dev-secret-key-change-me-123456}
+    valid-api-keys:
+      - founderlink-local-key
+    unsecured-paths:
+      - /api/auth/register
+      - /api/auth/login
+      - /actuator/**
+      - /gateway/routes
+      - /system/status
+  rate-limit:
+    requests-per-minute: 120
+  idempotency-excluded-path-prefixes:
+    - /api/auth
+  # Downstream apps on the host (IntelliJ): defaults use localhost + PORTS.md ports.
+  # Only MySQL, RabbitMQ, Zipkin run in Docker; bind ports to localhost for apps.
+  # If the gateway itself runs in Docker and talks to apps on the host: set GATEWAY_DOWNSTREAM_HOST=host.docker.internal
+  routes:
+    - id: user-service
+      path-prefix: /api/users
+      strip-path-prefix: true
+      target-base-uri: http://${GATEWAY_DOWNSTREAM_HOST:localhost}:${USER_SERVICE_PORT:8081}/users
+    - id: startup-service
+      path-prefix: /api/startups
+      strip-path-prefix: true
+      target-base-uri: http://${GATEWAY_DOWNSTREAM_HOST:localhost}:${STARTUP_SERVICE_PORT:8082}/startups
+    - id: investment-service
+      path-prefix: /api/investments
+      strip-path-prefix: true
+      target-base-uri: http://${GATEWAY_DOWNSTREAM_HOST:localhost}:${INVESTMENT_SERVICE_PORT:8084}/investments
+    - id: team-service
+      path-prefix: /api/teams
+      strip-path-prefix: true
+      target-base-uri: http://${GATEWAY_DOWNSTREAM_HOST:localhost}:${TEAM_SERVICE_PORT:8088}/teams
+    - id: messaging-service
+      path-prefix: /api/messages
+      strip-path-prefix: true
+      target-base-uri: http://${GATEWAY_DOWNSTREAM_HOST:localhost}:${MESSAGING_SERVICE_PORT:8085}/messages
+    - id: notification-service
+      path-prefix: /api/notifications
+      strip-path-prefix: true
+      target-base-uri: http://${GATEWAY_DOWNSTREAM_HOST:localhost}:${NOTIFICATION_SERVICE_PORT:8086}/notifications
+    - id: analytics-service
+      path-prefix: /api/analytics
+      strip-path-prefix: true
+      target-base-uri: http://${GATEWAY_DOWNSTREAM_HOST:localhost}:${ANALYTICS_SERVICE_PORT:8087}/analytics
+    - id: auth-service
+      path-prefix: /api/auth
+      strip-path-prefix: true
+      target-base-uri: http://${GATEWAY_DOWNSTREAM_HOST:localhost}:${AUTH_SERVICE_PORT:8083}/auth
